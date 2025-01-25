@@ -92,7 +92,25 @@
 			<artifactId>curator-recipes</artifactId>
 			<version>5.7.1</version>
 		</dependency>
+			<!-- Spring Kafka -->
+			<dependency>
+				<groupId>org.springframework.kafka</groupId>
+				<artifactId>spring-kafka</artifactId>
+				 <!-- Update the version as needed -->
+			</dependency>
 
+			<!-- Kafka Clients -->
+			<dependency>
+				<groupId>org.apache.kafka</groupId>
+				<artifactId>kafka-clients</artifactId>
+				<!-- Update the version as needed -->
+			</dependency>
+
+			<!-- Jackson for JSON Serialization -->
+			<dependency>
+				<groupId>com.fasterxml.jackson.core</groupId>
+				<artifactId>jackson-databind</artifactId>
+			</dependency>
 	</dependencies>
 	<build>
 		<plugins>
