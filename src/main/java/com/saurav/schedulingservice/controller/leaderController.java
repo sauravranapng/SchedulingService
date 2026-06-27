@@ -1,6 +1,6 @@
-package com.saurav.schedulingService.controller;
+package com.saurav.schedulingservice.controller;
 
-import com.saurav.schedulingService.leader.LeaderElectionService;
+import com.saurav.schedulingservice.leader.LeaderElectionService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;

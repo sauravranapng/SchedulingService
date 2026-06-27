@@ -1,7 +1,7 @@
-package com.saurav.schedulingService.repository;
+package com.saurav.schedulingservice.repository;
 
-import com.saurav.schedulingService.entity.TaskSchedule;
-import com.saurav.schedulingService.util.TaskSchedulePrimaryKey;
+import com.saurav.schedulingservice.entity.TaskSchedule;
+import com.saurav.schedulingservice.util.TaskSchedulePrimaryKey;
 import org.springframework.data.cassandra.repository.CassandraRepository;
 import org.springframework.data.cassandra.repository.Query;
 import org.springframework.data.repository.query.Param;

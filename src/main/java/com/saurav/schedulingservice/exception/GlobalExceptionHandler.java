@@ -1,5 +1,6 @@
-package com.saurav.schedulingService.exception;
-import com.saurav.schedulingService.dto.ErrorResponse;
+package com.saurav.schedulingservice.exception;
+import com.saurav.schedulingservice.dto.ErrorResponse;
+import org.checkerframework.checker.nullness.qual.NonNull;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -11,7 +12,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
-import java.util.Date;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -24,7 +25,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             ResourceNotFoundException ex,
             WebRequest webRequest
     ) {
-        ErrorResponse errorDetails = new ErrorResponse(new Date(), ex.getMessage(), webRequest.getDescription(false));
+        ErrorResponse errorDetails = new ErrorResponse(Instant.now(), ex.getMessage(), webRequest.getDescription(false));
         return new ResponseEntity<>(errorDetails, HttpStatus.NOT_FOUND);
     }
     /* It will handle the exception when the user id is not linked
@@ -35,7 +36,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             JobServiceApiException ex,
             WebRequest webRequest
     ) {
-        ErrorResponse errorDetails = new ErrorResponse(new Date(), ex.getMessage(), webRequest.getDescription(false));
+        ErrorResponse errorDetails = new ErrorResponse(Instant.now(), ex.getMessage(), webRequest.getDescription(false));
         return new ResponseEntity<>(errorDetails, HttpStatus.BAD_REQUEST);
     }
     // it will handle the generic exceptions
@@ -44,7 +45,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             Exception ex,
             WebRequest webRequest
     ){
-        ErrorResponse errorDetails = new ErrorResponse(new Date(), ex.getMessage(), webRequest.getDescription(false));
+        ErrorResponse errorDetails = new ErrorResponse(Instant.now(), ex.getMessage(), webRequest.getDescription(false));
         return new ResponseEntity<>(errorDetails, HttpStatus.INTERNAL_SERVER_ERROR);
     }
     /* it will handle the exception
@@ -53,9 +54,9 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @Override
     protected ResponseEntity<Object> handleMethodArgumentNotValid(
             MethodArgumentNotValidException ex,
-            HttpHeaders headers,
-            HttpStatusCode status,
-            WebRequest request
+            @NonNull HttpHeaders headers,
+            @NonNull HttpStatusCode status,
+            @NonNull WebRequest request
     ) {
         Map<String,String> errors = new HashMap<>();
         ex.getBindingResult().getAllErrors().forEach(
@@ -65,6 +66,6 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                     errors.put(field,message);
                 }
         );
-        return new ResponseEntity(errors,HttpStatus.BAD_REQUEST);
+        return new ResponseEntity<>(errors, HttpStatus.BAD_REQUEST);
     }
 }

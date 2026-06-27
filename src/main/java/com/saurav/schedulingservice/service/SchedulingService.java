@@ -1,7 +1,8 @@
-package com.saurav.schedulingService.service;
-import com.saurav.schedulingService.entity.TaskSchedule;
-import com.saurav.schedulingService.leader.LeaderElectionService;
-import com.saurav.schedulingService.repository.TaskScheduleRepository;
+package com.saurav.schedulingservice.service;
+import com.saurav.schedulingservice.entity.TaskSchedule;
+import com.saurav.schedulingservice.event.JobExecutionEvent;
+import com.saurav.schedulingservice.leader.LeaderElectionService;
+import com.saurav.schedulingservice.repository.TaskScheduleRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,47 +14,40 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
-import java.util.UUID;
 
 @Service
-public class JobService {
+public class SchedulingService {
     private final LeaderElectionService leaderElectionService;
     private final TaskScheduleRepository taskScheduleRepository;
-    private final KafkaTemplate<String, String> kafkaTemplate;
+    private final KafkaTemplate<String, JobExecutionEvent> kafkaTemplate;
     private List<Integer> assignedSegments;
     @Value("${app.kafka.topic}")
     private String kafkaTopic;
-    private static final Logger logger = LoggerFactory.getLogger(JobService.class);
+    private static final Logger logger = LoggerFactory.getLogger(SchedulingService.class);
 
     @Autowired
-    public JobService(LeaderElectionService leaderElectionService,
-                      TaskScheduleRepository taskScheduleRepository, KafkaTemplate<String, String> kafkaTemplate) {
+    public SchedulingService(LeaderElectionService leaderElectionService,
+                            TaskScheduleRepository taskScheduleRepository, KafkaTemplate<String, JobExecutionEvent> kafkaTemplate) {
         this.leaderElectionService = leaderElectionService;
         this.taskScheduleRepository = taskScheduleRepository;
         this.kafkaTemplate = kafkaTemplate;
         this.assignedSegments = leaderElectionService.getAssignedSegmentsForCurrentInstance();
     }
-    /**
-     * Fetches the assigned segment for the current instance from ZooKeeper.
-     */
 
     /**
+     * Fetches the assigned segment for the current instance from ZooKeeper.
      * Fetch jobs to execute for the assigned segment in the current minute.
      *
      * @return List of job IDs
      */
     private List<TaskSchedule> getJobsForExecution() {
         if (assignedSegments == null) {
-            System.out.println("Assigned segment is not set. Ensure ZooKeeper is configured correctly.");
+            logger.info("Assigned segment is not set. Ensure ZooKeeper is configured correctly.");
         }
-        long currentMinuteInSeconds = Instant.now()  // Get current UTC time
-                .atZone(ZoneOffset.UTC)  // Ensure the time zone is UTC
-                .withSecond(0)  // Round to the start of the minute
-                .withNano(0)  // Remove the nanoseconds part
-                .toEpochSecond();
-         long currentMinute = currentMinuteInSeconds / 60;
+        long currentMinute = Instant.now().getEpochSecond() / 60;
          return taskScheduleRepository.findJobsForCurrentMinute(currentMinute, assignedSegments);
     }
+
     /**
      * Scheduled task to fetch jobs every minute and publish them to Kafka.
      */
@@ -76,9 +70,20 @@ public class JobService {
                 return;
             }
 
-            jobsToExecute.parallelStream().forEach(job -> {
-                UUID jobId = job.getKey().getJobId();
-                kafkaTemplate.send(kafkaTopic, jobId.toString());
+            jobsToExecute.forEach(job -> {
+                JobExecutionEvent event = new JobExecutionEvent(
+                        job.getUserId(),
+                        job.getKey().getJobId()
+                );
+                kafkaTemplate.send(kafkaTopic, event)
+                        .whenComplete((result, ex) -> {
+                            if (ex == null) {
+                                logger.info("Published JobExecutionEvent: {}", event);
+                            } else {
+                                logger.error("Failed to publish JobExecutionEvent: {}", event, ex);
+                            }
+                        });
+
             });
 
         } catch (Exception e) {

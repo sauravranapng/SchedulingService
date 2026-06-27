@@ -1,0 +1,64 @@
+server:
+  port: 8081
+
+spring:
+  cassandra:
+    keyspace-name: tasks
+    username: jDrFHtkFSBugOjSusHMGmlKt
+    password: C-WGEfuQSjQ_GB67tn-6Hjf9pS8WH7HsWB38_TR9ycQ0jxMXWDIqPnTyCj,,cInX,TnPyqxA0GYd4W1WFv3_5nFKB-MPSl4KsKZR8BTFx,G2EOTAM-MyjuLIsgj5UoOK
+    schema-action: none
+
+    request:
+      timeout: 10s
+
+    connection:
+      connect-timeout: 10s
+      init-query-timeout: 10s
+
+  kafka:
+    bootstrap-servers: 172.25.119.108:9092
+
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+      retries: 3
+      acks: all
+      batch-size: 16384
+      buffer-memory: 33554432
+      linger-ms: 1
+
+springdoc:
+  api-docs:
+    enabled: true
+    groups:
+      enabled: true
+
+  swagger-ui:
+    display-request-duration: true
+    groups-order: DESC
+
+  group-configs:
+    - group: Rest Controllers (Spring MVC)
+      packages-to-scan: com.datastax.workshop
+
+datastax:
+  astra:
+    secure-connect-bundle: classpath:astra/secure-connect-scheduler.zip
+
+zookeeper:
+  connect-string: localhost:2181
+  leader-path: /scheduling-service/leader
+  assignment-path: /scheduling-service/segments/assignments
+  instances-path: /scheduling-service/instances
+  session-timeout: 5000
+  connection-timeout: 5000
+
+app:
+  kafka:
+    topic: scheduling-topic
+
+metadata:
+  fetch:
+    timeout:
+      ms: 10000

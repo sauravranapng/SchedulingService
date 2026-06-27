@@ -1,4 +1,4 @@
-package com.saurav.schedulingService.leader;
+package com.saurav.schedulingservice.leader;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
@@ -39,7 +39,7 @@ public class LeaderElectionService {
     private CuratorFramework client;
     private LeaderLatch leaderLatch;
 
-    private Map<String, List<Integer>> segmentAssignments = new ConcurrentHashMap<>();
+    private final Map<String, List<Integer>> segmentAssignments = new ConcurrentHashMap<>();
 
     @PostConstruct
     public void start() {
@@ -205,6 +205,7 @@ public class LeaderElectionService {
             logger.error("Error updating local segment cache: {}", e.getMessage());
         }
     }
+
     private void registerInstance() {
         try {
             // Generate a unique ID for this instance
@@ -223,9 +224,11 @@ public class LeaderElectionService {
             logger.error("Failed to register instance: {}", e.getMessage());
         }
     }
+
     public List<Integer> getAssignedSegmentsForCurrentInstance() {
         return segmentAssignments.getOrDefault(instanceId, Collections.emptyList());
     }
+
     @PreDestroy
     public void stop() {
         try {

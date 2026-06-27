@@ -1,4 +1,4 @@
-package com.saurav.schedulingService;
+package com.saurav.schedulingservice;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

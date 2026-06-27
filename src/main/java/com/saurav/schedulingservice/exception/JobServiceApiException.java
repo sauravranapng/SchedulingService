@@ -1,4 +1,4 @@
-package com.saurav.schedulingService.exception;
+package com.saurav.schedulingservice.exception;
 
 import lombok.Getter;
 import org.springframework.http.HttpStatus;

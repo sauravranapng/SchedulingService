@@ -1,4 +1,4 @@
-package com.saurav.schedulingService;
+package com.saurav.schedulingservice;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;

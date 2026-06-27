@@ -1,4 +1,4 @@
-package com.saurav.schedulingService.config;
+package com.saurav.schedulingservice.config;
 
 import com.datastax.oss.driver.api.core.CqlSession;
 import org.slf4j.Logger;
@@ -6,9 +6,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.Resource;
 import org.springframework.data.cassandra.core.CassandraTemplate;
 
-import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 @Configuration
@@ -20,7 +22,7 @@ public class CassandraConfig {
     private String keySpace;
 
     @Value("${datastax.astra.secure-connect-bundle}")
-    private File cloudSecureBundle;
+    private Resource cloudSecureBundle;
 
     @Value("${spring.cassandra.username}")
     private String username;
@@ -29,18 +31,18 @@ public class CassandraConfig {
     private String password;
 
     @Bean
-    public CqlSession cqlSession() {
-        // Check if the secure bundle exists
+    public CqlSession cqlSession() throws IOException {
         if (cloudSecureBundle == null || !cloudSecureBundle.exists()) {
-            throw new IllegalStateException("Secure connect bundle not found at path: " + cloudSecureBundle);
+            throw new IllegalStateException("Secure connect bundle not found");
         }
 
-        Path bundlePath = cloudSecureBundle.toPath();
-        logger.info("Loading secure connect bundle from: " + bundlePath);
-        logger.info("Cassandra username: " + username);
+        Path tempFile = Files.createTempFile("secure-connect-", ".zip");
+        Files.copy(cloudSecureBundle.getInputStream(), tempFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+
+        logger.info("Loading secure connect bundle from classpath resource");
 
         return CqlSession.builder()
-                .withCloudSecureConnectBundle(bundlePath)
+                .withCloudSecureConnectBundle(tempFile)
                 .withAuthCredentials(username, password)
                 .withKeyspace(keySpace)
                 .build();
@@ -50,7 +52,4 @@ public class CassandraConfig {
     public CassandraTemplate cassandraTemplate(CqlSession session) {
         return new CassandraTemplate(session);
     }
-
-
 }
-
