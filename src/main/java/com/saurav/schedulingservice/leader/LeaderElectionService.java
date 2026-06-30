@@ -1,29 +1,42 @@
 package com.saurav.schedulingservice.leader;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.saurav.schedulingservice.dto.InstanceMetadata;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.framework.imps.CuratorFrameworkState;
-import org.apache.curator.framework.recipes.cache.PathChildrenCache;
-import org.apache.curator.framework.recipes.cache.PathChildrenCacheEvent;
+import org.apache.curator.framework.recipes.cache.CuratorCache;
 import org.apache.curator.framework.recipes.leader.LeaderLatch;
+import org.apache.curator.framework.recipes.leader.LeaderLatchListener;
 import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.apache.zookeeper.CreateMode;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import static com.saurav.schedulingservice.util.Constant.Z_NODE_SEPARATOR;
+
+
+@Slf4j
 @Component
 public class LeaderElectionService {
 
-    private static final Logger logger = LoggerFactory.getLogger(LeaderElectionService.class);
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private String instanceId;
 
@@ -33,8 +46,17 @@ public class LeaderElectionService {
     @Value("${zookeeper.assignment-path}")
     private String assignmentPath;
 
+    @Value("${zookeeper.leader-path}")
+    private String leaderPath;
+
     @Value("${zookeeper.instances-path}")
     private String instancesPath;
+
+    @Value("${task_schedule.total-segment}")
+    private Integer totalSegment;
+
+    @Value("${server.port}")
+    private int serverPort;
 
     private CuratorFramework client;
     private LeaderLatch leaderLatch;
@@ -53,26 +75,39 @@ public class LeaderElectionService {
             }
             registerInstance();
             // Initialize leader latch
-            leaderLatch = new LeaderLatch(client, "/scheduling-service/leader");
+            leaderLatch = new LeaderLatch(client, leaderPath);
+            leaderLatch.addListener(new LeaderLatchListener() {
+
+                @Override
+                public void isLeader() {
+
+                    log.info("This instance is now the leader: {}", instanceId);
+                    log.info("This instance is now the leader: {}", instanceId);
+
+                    CompletableFuture.runAsync(() -> {
+                        try {
+                            assignSegmentsToAllInstances();
+                        } catch (Exception e) {
+                            log.error("Segment assignment failed", e);
+                        }
+                    });
+                }
+
+                @Override
+                public void notLeader() {
+
+                    log.info("Leadership lost by instance: {}", instanceId);
+                }
+
+            });
             leaderLatch.start();
-            logger.info("Leader election service started. Instance ID: {}", leaderLatch.getId());
+            log.info("Leader election service started. Instance ID: {}", leaderLatch.getId());
             // Watch for updates
             watchInstances();
             watchSegmentAssignments();
-            try {
-                leaderLatch.await(); // This will block until the instance becomes the leader
-                logger.info("Leader election service finished. Instance ID: {}", leaderLatch.getId());
-                // This will now be printed once the instance becomes the leader
-            } catch (InterruptedException e) {
-                logger.error("Leader election interrupted: {}", e.getMessage());
-            }
-            if (isLeader()) {
-                assignSegmentsToAllInstances();
-                logger.info("It is leader ");
-            }
 
         } catch (Exception e) {
-            logger.error("Error starting leader election service: {}", e.getMessage());
+            log.error("Error starting leader election service: {}", e.getMessage());
             stop(); // Clean up resources
         }
     }
@@ -86,11 +121,11 @@ public class LeaderElectionService {
             List<String> activeInstances = client.getChildren().forPath(instancesPath);
 
             if (activeInstances.isEmpty()) {
-                logger.warn("No active instances found for segment assignment.");
+                log.warn("No active instances found for segment assignment.");
                 return;
             }
 
-            int totalSegments = 10; // Number of segments (you can configure this dynamically)
+            int totalSegments = totalSegment; // Number of segments
             int segmentsPerInstance = totalSegments / activeInstances.size();
             int remainder = totalSegments % activeInstances.size();
 
@@ -109,49 +144,55 @@ public class LeaderElectionService {
                 }
 
                 segmentAssignments.put(instance, assignedSegments);
-                logger.info("Assigned segments {} to instance {}", assignedSegments, instance);
+                log.info("Assigned segments {} to instance {}", assignedSegments, instance);
             }
 
             // Save segment assignments in Zookeeper
             updateSegmentAssignmentsInZookeeper();
         } catch (Exception e) {
-            logger.error("Error assigning segments: {}", e.getMessage());
+            log.error("Error assigning segments: {}", e.getMessage());
         }
     }
 
     private void watchInstances() {
-        try {
-            PathChildrenCache cache = new PathChildrenCache(client, instancesPath, true);
-            cache.getListenable().addListener((client, event) -> {
-                switch (event.getType()) {
-                    case CHILD_ADDED:
-                    case CHILD_REMOVED:
-                        if (isLeader()) {
-                            assignSegmentsToAllInstances();
-                        }
-                        break;
-                    default:
-                        break;
+
+        CuratorCache instancesCache;
+
+        instancesCache = CuratorCache.build(client, instancesPath);
+
+        instancesCache.listenable().addListener((type, oldData, newData) -> {
+
+            switch (type) {
+
+                case NODE_CREATED, NODE_DELETED -> {
+
+                    log.info("Scheduler instances changed.");
+
+                    if (isLeader()) {
+                        CompletableFuture.runAsync(this::assignSegmentsToAllInstances);
+                    }
                 }
-            });
-            cache.start();
-        } catch (Exception e) {
-            logger.error("Error watching instances: {}", e.getMessage());
-        }
+
+                default -> {
+                    // Ignore
+                }
+            }
+
+        });
+
+        instancesCache.start();
     }
 
     private void updateSegmentAssignmentsInZookeeper() {
         try {
-            //String path = "/scheduling-service/segments/assignments";
-            // Serialize the segmentAssignments map to byte array
             byte[] data = new ObjectMapper().writeValueAsBytes(segmentAssignments);
             // Log the serialized data to verify what is being sent to Zookeeper
-            logger.info("Serialized segment assignments: {}", new String(data, StandardCharsets.UTF_8));
+            log.info("Serialized segment assignments: {}", new String(data, StandardCharsets.UTF_8));
 
             // Check if the path exists
             if (client.checkExists().forPath(assignmentPath) == null) {
                 // Path does not exist, create it as a persistent node
-                logger.info("Path does not exist. Creating path at: {}", assignmentPath);
+                log.info("Path does not exist. Creating path at: {}", assignmentPath);
 
                 client.create()
                         .creatingParentsIfNeeded()
@@ -159,70 +200,93 @@ public class LeaderElectionService {
                         .forPath(assignmentPath, data);
             } else {
                 // Path exists, update the data
-                logger.info("Path exists. Updating data at: {}", assignmentPath);
+                log.info("Path exists. Updating data at: {}", assignmentPath);
 
                 client.setData().forPath(assignmentPath, data);
             }
         } catch (Exception e) {
             // Log the full exception to capture detailed stack trace and message
-            logger.error("Error updating segment assignments in Zookeeper at path {}: {}", "/scheduling-service/segments/assignments", e.getMessage(), e);
+            log.error("Error updating segment assignments in Zookeeper at path {}: {}", "/scheduling-service/segments/assignments", e.getMessage(), e);
             // Optionally, you can add retry logic here in case of transient failures
         }
     }
 
     private void watchSegmentAssignments() {
-        try {
-            PathChildrenCache cache = new PathChildrenCache(client, assignmentPath, true);
-            cache.getListenable().addListener((client, event) -> {
-                if (event.getType() == PathChildrenCacheEvent.Type.CHILD_UPDATED ||
-                        event.getType() == PathChildrenCacheEvent.Type.CHILD_ADDED) {
-                    updateLocalSegmentCache();
-                }
-            });
+        CuratorCache assignmentCache;
 
-            cache.start();
-        } catch (Exception e) {
-            logger.error("Error watching segment assignments: {}", e.getMessage());
-        }
+        assignmentCache = CuratorCache.build(client, assignmentPath);
+
+        assignmentCache.listenable().addListener((type, oldData, newData) -> {
+
+            switch (type) {
+
+                case NODE_CREATED, NODE_CHANGED -> {
+                    try {
+                        log.info("Segment assignments updated.");
+                        updateLocalSegmentCache();
+                    } catch (Exception e) {
+                        log.error("Failed to update local segment cache", e);
+                    }
+                }
+
+                default -> {
+                    // Ignore other events
+                }
+            }
+        });
+
+        assignmentCache.start();
     }
 
     private void updateLocalSegmentCache() {
         try {
 
             if (client.checkExists().forPath(assignmentPath) == null) {
-                logger.warn("No segment assignments found in Zookeeper.");
+                log.warn("No segment assignments found in Zookeeper.");
                 segmentAssignments.clear();
                 return;
             }
 
             byte[] data = client.getData().forPath(assignmentPath);
-            Map<String, List<Integer>> updatedAssignments = new ObjectMapper().readValue(data, Map.class);
+            Map<String, List<Integer>> updatedAssignments =
+                    objectMapper.readValue(data, new TypeReference<Map<String, List<Integer>>>() {});
             segmentAssignments.clear();
             segmentAssignments.putAll(updatedAssignments);
 
-            logger.info("Updated local segment cache with data: {}", updatedAssignments);
+            log.info("Updated local segment cache with data: {}", updatedAssignments);
         } catch (Exception e) {
-            logger.error("Error updating local segment cache: {}", e.getMessage());
+            log.error("Error updating local segment cache: {}", e.getMessage());
         }
     }
 
     private void registerInstance() {
-        try {
-            // Generate a unique ID for this instance
-                instanceId = UUID.randomUUID().toString(); // Or you could use a more meaningful ID
-            String instancePath = instancesPath + "/" + instanceId;
 
-            // Register as an ephemeral node
-            byte[] data = instanceId.getBytes(); // This could be more complex data if needed
+        try {
+
+            instanceId = UUID.randomUUID().toString();
+
+            String instancePath = instancesPath + Z_NODE_SEPARATOR + instanceId;
+
+            InstanceMetadata metadata = buildInstanceMetadata();
+
+            byte[] data = objectMapper.writeValueAsBytes(metadata);
+
             client.create()
                     .creatingParentsIfNeeded()
                     .withMode(CreateMode.EPHEMERAL)
                     .forPath(instancePath, data);
 
-            logger.info("Registered instance with ID {} at path {}", instanceId, instancePath);
+            log.info("Registered instance {} on {}:{}",
+                    metadata.getInstanceId(),
+                    metadata.getHost(),
+                    metadata.getPort());
+
         } catch (Exception e) {
-            logger.error("Failed to register instance: {}", e.getMessage());
+
+            log.error("Failed to register instance", e);
+
         }
+
     }
 
     public List<Integer> getAssignedSegmentsForCurrentInstance() {
@@ -239,7 +303,17 @@ public class LeaderElectionService {
                 client.close();
             }
         } catch (Exception e) {
-            logger.error("Error stopping leader election service: {}", e.getMessage());
+            log.error("Error stopping leader election service: {}", e.getMessage());
         }
+    }
+
+    private InstanceMetadata buildInstanceMetadata() throws UnknownHostException {
+
+        return new InstanceMetadata(
+                instanceId,
+                InetAddress.getLocalHost().getHostAddress(),
+                serverPort,
+                Instant.now()
+        );
     }
 }

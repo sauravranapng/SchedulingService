@@ -54,6 +54,9 @@ zookeeper:
   session-timeout: 5000
   connection-timeout: 5000
 
+task_schedule:
+  total-segment: 100
+
 app:
   kafka:
     topic: scheduling-topic
